@@ -27,10 +27,20 @@ function check_git() {
 ~~ git::${project_name} @ ${branch}  c:${changes} u:${untracked}"
 }
 
+function nvim_quit_cd() {
+local home="$(eval echo ~)"
+if [[ ! -f "$home/.file_nvim_quit" ]]; then return; fi
+
+local file_contents="$(cat ~/.file_nvim_quit)"
+cd "$file_contents"
+rm ~/.file_nvim_quit
+}
+
+# PROMPT_COMMAND manipulation
+PROMPT_COMMAND="nvim_quit_cd; $PROMPT_COMMAND"
+
 ## PS1 with colors ##
 export PS1='\n\e[01;31m[\u@\H \e[01;37m\t\e[01;31m]\n\e[01;37m\w\e[m$(check_git)\e[m\n\\$ '
-## PS1 no colors #cd "$(xclip -selection clipboard -o 2>/dev/null || wl-paste 2>/dev/null)"'
-
 
 function goto_clipboard_path() {
 	clipboard_content=$(xclip -selection clipboard -o 2>/dev/null || wl-paste 2>/dev/null)
