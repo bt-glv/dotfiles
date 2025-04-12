@@ -47,6 +47,9 @@ function goto_clipboard_path() {
 	cd "$clipboard_content"
 }
 
+export VISUAL=nvim
+export EDITOR=nvim
+
 alias lsa='ls -a'
 alias la='ls -la'
 
