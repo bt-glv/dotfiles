@@ -50,7 +50,7 @@ function goto_clipboard_path() {
 export VISUAL=nvim
 export EDITOR=nvim
 
-bind = '"\C-l":"clear\n"'
+bind '"\C-l":"clear\n"'
 
 alias lsa='ls -a'
 alias la='ls -la'
