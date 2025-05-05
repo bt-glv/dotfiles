@@ -1,3 +1,5 @@
 /.ssh
 .config/nvim/
 backup*/
+.local/share/nvim/*
+!.local/share/nvim/site

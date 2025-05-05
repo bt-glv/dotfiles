@@ -2,7 +2,7 @@
 # Attention!
 # This bashrc requires: git, fzf, fd
 #
-set -o vi
+
 function check_git() {
 
 	if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -10,13 +10,13 @@ function check_git() {
 		return 0
 	fi
 
-	git_status=$(git status)
-	project_name=$(git rev-parse --show-toplevel 2>/dev/null | grep -Po '[^/]+$')
+	local git_status=$(git status)
+	local project_name=$(git rev-parse --show-toplevel 2>/dev/null | grep -Po '[^/]+$')
 
-	branch=$(echo "$git_status" | grep -Po '^On branch \K[^ ]+')
-	changes=$(echo "$git_status" | grep -Pc '(modified:)|(deleted:)|(new file:)')
-	untracked=$(git status | grep -zPo "(Untracked files:)(\s.+)+" | wc -l)
-	untracked=$(($untracked-1))
+	local branch=$(echo "$git_status" | grep -Po '^On branch \K[^ ]+')
+	local changes=$(echo "$git_status" | grep -Pc '(modified:)|(deleted:)|(new file:)')
+	local untracked=$(git status | grep -zPo "(Untracked files:)(\s.+)+" | wc -l)
+	local untracked=$(($untracked-1))
 	if [ $untracked -eq -1 ]; then 
 		untracked=0
 	fi
@@ -28,25 +28,48 @@ function check_git() {
 }
 
 function nvim_quit_cd() {
-local home="$(eval echo ~)"
-if [[ ! -f "$home/.file_nvim_quit" ]]; then return; fi
+	local home="$(eval echo ~)"
 
-local file_contents="$(cat ~/.file_nvim_quit)"
-cd "$file_contents"
-rm ~/.file_nvim_quit
+	if [[ ! -f "$home/.file_nvim_quit" ]]; then return; fi
+
+	local file_contents="$(cat ~/.file_nvim_quit)"
+
+	cd "$file_contents"
+	rm ~/.file_nvim_quit
 }
+
+function goto_clipboard_path() {
+	local clipboard_content=$(xclip -selection clipboard -o 2>/dev/null || wl-paste 2>/dev/null)
+	cd "$clipboard_content"
+}
+
+function pwc() {
+	local _wl_clipboard=false
+	local _xclip=false
+	
+	if which xclip >/dev/null 2>&1; then _xclip=true; fi 
+	if which wl-copy >/dev/null 2>&1; then _wl_clipboard=true; fi 
+
+	if { [ "$_wl_clipboard" = true ] || [ "$_xclip" = true ]; } && { [ "$_xclip" != true ] || [ "$_wl_clipboard" != true ]; }; then
+			echo "$(pwd)" | xclip -selection clipboard >/dev/null 2>&1 || echo "$(pwd)" | wl-copy >/dev/null 2>&1;
+			return 0;
+	fi
+
+	echo "$(pwd)" | xclip -selection clipboard >/dev/null 2>&1 
+	echo "$(pwd)" | wl-copy >/dev/null 2>&1 || echo "$(pwd)" | wl-copy >/dev/null 2>&1
+	return 0
+}
+
+# set VI MODE
+set -o vi
 
 # PROMPT_COMMAND manipulation
 PROMPT_COMMAND="nvim_quit_cd; $PROMPT_COMMAND"
 
-## PS1 with colors ##
+# PS1 with colors
 export PS1='\n\e[01;31m[\u@\H \e[01;37m\t\e[01;31m]\n\e[01;37m\w\e[m$(check_git)\e[m\n\\$ '
 
-function goto_clipboard_path() {
-	clipboard_content=$(xclip -selection clipboard -o 2>/dev/null || wl-paste 2>/dev/null)
-	cd "$clipboard_content"
-}
-
+# editor definitions
 export VISUAL=nvim
 export EDITOR=nvim
 
@@ -59,12 +82,12 @@ alias new='alacritty --working-directory "$(pwd)" >/dev/null 2>&1 & disown'
 alias ex="dolphin . >/dev/null 2>&1 & disown"
 alias pv="dolphin . >/dev/null 2>&1 & disown"
 alias pg='goto_clipboard_path'
-alias pwc='pwd | if command -v wl-copy >/dev/null 2>&1; then wl-copy; else xclip -selection clipboard; fi'
 alias ~~='cd ~/'
+# alias pwc='pwd | if command -v wl-copy >/dev/null 2>&1; then wl-copy >/dev/null 2>&1; else xclip -selection clipboard >/dev/null 2>&1; fi'
 
 
 # Opens neovim in terminal mode at current dir
-alias term="nvim +terminal"
+alias term="nvim -c 'terminal' -c 'set rnu nu'"
 alias nt="nvim +terminal"
 alias nv="nvim ."
 alias nvi="nvim"
