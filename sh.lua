@@ -1,6 +1,8 @@
 
 log_generate = true
 
+---@param head string
+---@param body string?
 function log(head, body)
 	if not log_generate then return end
 	if body == nil then print(head) return end
@@ -8,6 +10,9 @@ function log(head, body)
 end
 
 
+---@return {out:string, status:number}
+---@param command string #Shell Command
+---@param suppress boolean? #add >/devl/null 2>&1 at the end
 function sh(command,suppress)
 	if suppress then command = command.." >/dev/null 2>&1" end
 	log("sh command", command)
@@ -22,6 +27,15 @@ function sh(command,suppress)
 end
 
 
+---@param path string
+---@return boolean
+function sh_syslink_check(path)
+		local check_syslink = sh('if [ -L "'..path..'" ]; then echo "t";  fi').out
+		log("check_syslink value: ["..check_syslink..']  type:['..type(check_syslink)..']')
+		return (check_syslink ~= "t")
+end
+
+
 ---@param checks table
 function sh_input(question, checks)
 	if type(checks) == 'string' then checks = {checks} end
@@ -32,23 +46,28 @@ function sh_input(question, checks)
 
 		local x = false
 		for _, check_pattern in ipairs(checks) do
-			x = (string.match(input, check_pattern) ~= nil) or x	
+			x = (string.match(input, check_pattern) ~= nil) or x
 		end
-		
+
 		if x then return input end
 
-	end 
+	end
 end
 
 
 function sh_q_enable_logs()
 	input = sh_input('\nEnable logs? (y/n)\n', {'[yn]'})
-	if input == 'y' 	then log_generate = true 
+	if input == 'y' 	then log_generate = true
 	elseif input == 'n' then  log_generate = false
 	end
 end
 
 
+-------
+------- Arguments management
+-------
+
+-- TODO [ ] Add a tree like data structure to handle chains of arguments
 local arg_opts = {}
 
 ---@param key string

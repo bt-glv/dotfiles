@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 package.path = ";./?.lua"
-require('sh'); 
+require('sh');
 
 
 local root_path = "~/"
@@ -14,16 +14,42 @@ local links = {
 	{".config/alacritty/",	"sys"},
 	{".local/share/nvim/",	"sys"},
 	{".local/share/fonts/",	"sys"},
+	{".config/autostart/",	"sys"},
 }
 
+-- ideas
+-- exclude folders from a path
+
+-- todo
+-- [ ] adapt this file to use SH for argument handling
+-- [ ] adapt SH to handle argument trees
 
 
 -------------
 -------------
+
+-- copies home folder path to this file's path
+local function snapshot(paths, base_path)
+
+		local operation = true
+		log("\n>>\n>> snapshot START\n>>")
+
+		for i, path in ipairs(paths) do
+
+			local dirname = sh('dirname '..path).out
+			sh('mkdir -p '..dirname)
+
+			sh("cp -r "..base_path..path.." "..dirname)
+			log("item "..i)
+		end
+
+		log("\n>>\n>> snapshot END\n>>")
+end
+
 local function generate_backup(paths, base_path)
 	log('\n>>\n>>generate_backup START\n>>\n')
 	if paths == nil or base_path == nil then
-		error('generate_backup:\nParameters cannot be nil') 
+		error('generate_backup:\nParameters cannot be nil')
 	end
 
 
@@ -50,7 +76,7 @@ local function generate_backup(paths, base_path)
 		local check_syslink = sh('if [ -L "$(echo '..base_path..')'..path[1]..'" ]; then echo "t";  fi').out
 		log("check_syslink value: ["..check_syslink..']  type:['..type(check_syslink)..']')
 
-		if check_syslink  ~= "t" then 
+		if check_syslink  ~= "t" then
 			sh('cp -r '..path_source_full.." "..backup_folder_name.."/"..path[1])
 		else
 			log('>> target path is a system link\n>> link path will be followed and copied')
@@ -66,6 +92,12 @@ end
 
 -- TODO:
 -- [ ] test this function
+--
+-- get list of all files and folder
+-- itarate thoough each of them
+-- create a hardlink for file
+-- run funciton again on folder
+--
 local function everything_in_folder_hardlink(base_path)
 	local res = sh([[ls -la ]]..base_path..[[| grep -Po "[^ /]+$]])
 	local entries = {}
@@ -83,10 +115,6 @@ local function everything_in_folder_hardlink(base_path)
 	end
 
 end
-	-- get list of all files and folder
-	-- itarate thoough each of them
-	-- create a hardlink for file
-	-- run funciton again on folder
 
 
 local function create_links(links, root)
