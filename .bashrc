@@ -38,7 +38,7 @@ function nvim_quit_cd() {
 	rm ~/.file_nvim_quit
 }
 
-function goto_clipboard_path() {
+function pg() {
 	local clipboard_content=$(xclip -selection clipboard -o 2>/dev/null || wl-paste 2>/dev/null)
 	cd "$clipboard_content"
 }
@@ -81,7 +81,6 @@ alias la='ls -la'
 alias new='alacritty --working-directory "$(pwd)" >/dev/null 2>&1 & disown'
 alias ex="dolphin . >/dev/null 2>&1 & disown"
 alias pv="dolphin . >/dev/null 2>&1 & disown"
-alias pg='goto_clipboard_path'
 alias ~~='cd ~/'
 # alias pwc='pwd | if command -v wl-copy >/dev/null 2>&1; then wl-copy >/dev/null 2>&1; else xclip -selection clipboard >/dev/null 2>&1; fi'
 
