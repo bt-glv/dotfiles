@@ -1,3 +1,7 @@
+-- This is a system/hard link farming script
+-- Declare folders/files present on the same folder
+-- as this file to be linked at the root path
+
 #!/usr/bin/env lua
 package.path = ";./?.lua"
 require('sh');
@@ -14,7 +18,7 @@ local links = {
 	{".config/alacritty/",	"sys"},
 	{".local/share/nvim/",	"sys"},
 	{".local/share/fonts/",	"sys"},
-	{".config/autostart/",	"sys"},
+	--{".config/autostart/",	"sys"},
 }
 
 -- ideas
@@ -45,6 +49,17 @@ local function snapshot(paths, base_path)
 
 		log("\n>>\n>> snapshot END\n>>")
 end
+
+local final_considerations = {
+	messages = {},
+	print = function(self)
+		if #self == 0 then return end
+		for _, data in ipairs(self.messages) do
+			print(data)
+		end
+	end,
+}
+
 
 local function generate_backup(paths, base_path)
 	log('\n>>\n>>generate_backup START\n>>\n')
