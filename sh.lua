@@ -56,7 +56,7 @@ end
 
 
 function sh_q_enable_logs()
-	input = sh_input('\nEnable logs? (y/n)\n', {'[yn]'})
+	input = sh_input('Enable logs? (y/n)\n', {'[yn]'})
 	if input == 'y' 	then log_generate = true
 	elseif input == 'n' then  log_generate = false
 	end

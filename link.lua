@@ -1,149 +1,276 @@
 #!/usr/bin/env lua
 
 -- This is a system/hard link farming script
--- Declare folders/files present on the same folder
--- as this file to be linked at the root path
+-- Declare folders/files to be linked at the root path
 --
-package.path = ";./?.lua"
-require('sh');
+package.path = package.path .. ";./?.lua"
+require('sh')
 
+---@alias LinkType "hard" | "sys"
+---@alias BackupEntry { [1]: string, [2]: LinkType }
+
+---@type string
 local root_path = "~/"
+
+---@type BackupEntry[]
 local backup_paths = {
-	{".bashrc", 						"hard"},
-	{".config/fish/config.fish", 		"sys"},
-	{".zshrc", 							"hard"},
-	{".tmux.conf", 						"hard"},
-	{".vimrc", 							"hard"},
-	{".ssh/", 				            "sys"},
-	{".config/nvim/",		            "sys"},
-	{".config/alacritty/",	            "sys"},
-	{".local/share/fonts/",	            "sys"},
-	{".local/share/nvim/site/spell",	"sys"},
-	--{".local/share/nvim/",	"sys"},
-	--{".config/autostart/",	"sys"},
+    {".bashrc",                         "hard"},
+    {".config/fish/config.fish",        "hard"},
+    {".zshrc",                          "hard"},
+    {".tmux.conf",                      "hard"},
+    {".vimrc",                          "hard"},
+    {".ssh/",                           "sys"},
+    {".config/nvim/",                   "sys"},
+    {".config/alacritty/",              "sys"},
+    {".local/share/fonts/",             "sys"},
+    {".local/share/nvim/site/spell",    "sys"},
+    --{".local/share/nvim/",    "sys"},
+    --{".config/autostart/",    "sys"},
 }
 
+---@class FinalLog
+---@field messages string[]
+---@field print fun(self: FinalLog)
+local final_log = {
+    messages = {},
+    print = function(self)
+        if #self.messages == 0 then return end
+        for _, data in ipairs(self.messages) do
+            print(data)
+        end
+    end,
+}
 
---- Copies every file in "backup_paths" currently present 
---- in your sistem to a backup folder.
+---Validates and resolves the mandatory source/backup directory path.
+---Terminates execution if the path is omitted or cannot be found.
+---@param dir_arg string? The path passed via command-line argument
+---@return string The validated, absolute directory path without trailing slashes
+local function require_source_dir(dir_arg)
+    if dir_arg == nil or dir_arg == "" then
+        io.stderr:write("Error: A backup/source folder must be specified as an argument.\n")
+        os.exit(1)
+    end
+
+    local expanded_path = string.gsub(dir_arg, "^~", os.getenv("HOME") or "~")
+    local dir_exists = sh(string.format('if [ -d "%s" ]; then echo "t"; fi', expanded_path)).out == "t"
+
+    if not dir_exists then
+        io.stderr:write(string.format("Error: Specified folder '%s' does not exist or is not a directory.\n", dir_arg))
+        os.exit(1)
+    end
+
+    -- Get absolute path to prevent symlinks from breaking when using relative directories
+    local absolute_path = sh(string.format('cd "%s" && pwd', expanded_path)).out
+
+    return string.gsub(absolute_path, "[/]+$", "")
+end
+
+---Verifies if all files and directories declared in backup_paths exist in the target folder.
+---Prompts the user for confirmation if missing entries are detected.
+---@param paths BackupEntry[] List of target paths
+---@param source_dir string Resolved directory containing source files
+local function verify_backup_paths(paths, source_dir)
+    local missing_paths = {}
+
+    for _, entry in ipairs(paths) do
+        local full_path = string.format("%s/%s", source_dir, entry[1])
+        local exists = sh(string.format('if [ -e "%s" ]; then echo "t"; fi', full_path)).out == "t"
+
+        if not exists then
+            table.insert(missing_paths, entry[1])
+        end
+    end
+
+    if #missing_paths > 0 then
+        print("\n[!] Warning: The following declared paths were not found in the specified directory:")
+        for _, missing in ipairs(missing_paths) do
+            print(string.format("  - %s", missing))
+        end
+
+        local choice = sh_input("\nDo you want to proceed anyway? (y/n)", {'^[ynYN]$'})
+        if string.lower(choice) ~= "y" then
+            print("Operation aborted by user.")
+            os.exit(1)
+        end
+    end
+end
+
+---Generates an isolated backup of active configurations.
+---Prompts the user for a custom directory name; falls back to automatic generation if declined.
+---@param paths BackupEntry[] Target paths to back up
+---@param base_path string Root folder containing active configurations
 local function generate_backup(paths, base_path)
+    log('\n>>\n>>generate_backup START\n>>\n')
+    if paths == nil or base_path == nil then
+        error('generate_backup:\nParameters cannot be nil')
+    end
 
-	log('\n>>\n>>generate_backup START\n>>\n')
-	if paths == nil or base_path == nil then
-		error('generate_backup:\nParameters cannot be nil')
-	end
+    ---Creates a unique backup directory name recursively if duplicates exist.
+    ---@param name string Base directory prefix
+    ---@param index integer? Collision differentiator
+    ---@return string
+    local function define_dir_name(name, index)
+        index = index or 0
+        local new_name = string.format("%s-%d", name, index)
+        if sh(string.format('ls | grep -Po "^%s$"', new_name)).status ~= 0 then
+            return new_name
+        end
 
-	---@param name string Desired dir name
-	---@param index integer? Recursive index - used to differentiate backups on the same machine
-	--- Creates the backup folder's name, checks if a folder of that name exists;
-	--- if not, it returns the name, if it does, the function calls itself recursively
-	local function define_dir_name(name, index)
-		if index == nil then index = 0 end
+        return define_dir_name(name, index + 1)
+    end
 
-		local new_name = name..'-'..index
-		if sh('ls | grep -Po "^'..new_name..'$"').status ~= 0 then
-			return new_name
-		end
+    local backup_dir_name
+    local custom_choice = sh_input("\nDo you want to specify a custom name for the backup folder? (y/n)", {'^[ynYN]$'})
 
-		return define_dir_name(name, index+1)
-	end
+    if string.lower(custom_choice) == "y" then
+        print("\nEnter backup folder name:")
+        local custom_name = io.read()
+        while custom_name == nil or custom_name:match("^%s*$") do
+            print("Folder name cannot be empty. Please enter a valid backup folder name:")
+            custom_name = io.read()
+        end
+        backup_dir_name = custom_name:match("^%s*(.-)%s*$")
+    else
+        local backup_dir_prefix = string.format("backup.%s", sh('echo "$HOSTNAME@$USER"').out)
+        backup_dir_name = define_dir_name(backup_dir_prefix)
+    end
 
+    sh(string.format("mkdir -p %s", backup_dir_name))
 
-	local backup_dir_prefix = string.format("backup.%s", sh('echo "$HOSTNAME@$USER"').out)
-	local backup_dir_name   = define_dir_name(backup_dir_prefix)
+    for _, path in ipairs(paths) do
+        local path_source_full = string.format("%s%s", base_path, path[1])
 
-	sh('mkdir '..backup_dir_name)
+        sh(string.format("mkdir -p $(dirname %s/%s)", backup_dir_name, path[1]))
+        local check_syslink = sh(string.format('if [ -L "$(echo %s)%s" ]; then echo "t"; fi', base_path, path[1])).out
 
-	local path_source_full
-	for _, path in ipairs(paths) do
+        log(string.format("check_syslink value: [%s]  type:[%s]", check_syslink, type(check_syslink)))
 
-		path_source_full = base_path..path[1]
+        local not_a_system_link = (check_syslink ~= "t")
+        if not_a_system_link then
+            sh(string.format("cp -r %s %s/%s", path_source_full, backup_dir_name, path[1]))
+        else
+            log('>> target path is a system link\n>> link path will be followed and copied')
+            local syslink_path = sh(string.format("readlink %s", path_source_full)).out
+            sh(string.format("cp -r %s %s/%s", syslink_path, backup_dir_name, path[1]))
+        end
+    end
 
-		-- TODO: replace all concatenation with ".." with string.format for better readability
-		sh('mkdir -p $(dirname '..backup_dir_name..'/'..path[1]..')')
-		local check_syslink = sh('if [ -L "$(echo '..base_path..')'..path[1]..'" ]; then echo "t";  fi').out
-
-		log("check_syslink value: ["..check_syslink..']  type:['..type(check_syslink)..']')
-
-		local not_a_system_link = (check_syslink ~= "t")
-		if not_a_system_link then
-			sh('cp -r '..path_source_full.." "..backup_dir_name.."/"..path[1])
-		else
-			log('>> target path is a system link\n>> link path will be followed and copied')
-			local syslink_path = sh('readlink '..path_source_full).out
-			sh('cp -r '..syslink_path.." "..backup_dir_name.."/"..path[1])
-		end
-
-	end
-
-	log('\n>>\n>> generate_backup END\n>>\n')
+    log('\n>>\n>> generate_backup END\n>>\n')
 end
 
--- TODO: add a way to select a backup folder to create links from it
---
----@param links table Contains a list sets of "path" and  "link type"
----@param root string Home folder path
----Creates hard or system links to all paths defined in "links"
-local function link_bakcups(links, root)
+---Creates symbolic or hard links pointing from source_dir into the root path.
+---@param links BackupEntry[] List of link definitions
+---@param root string Target base directory (typically home)
+---@param source_dir string Folder containing the source configuration files
+local function create_links(links, root, source_dir)
+    log('\n>>\n>> create_links START\n>>\n')
 
-	log('\n>>\n>> create_links START\n>>\n')
-	generate_backup(links, root)
-	for i, path in ipairs(links) do
-		local operation = ""
-		if path[2] == "sys" then operation = "-s" end
+    local backup_choice = sh_input("\nDo you want to create a backup of current configurations first? (y/n)", {'^[ynYN]$'})
+    if string.lower(backup_choice) == "y" then
+        generate_backup(links, root)
+    else
+        print("\n Skipping backup.")
+        log("Backup skipped by user.")
+    end
 
-		local path_source = sh('pwd').out..'/'..path[1]
-		local path_target = string.gsub(root..path[1], "[/]$", '')
+    for _, path in ipairs(links) do
+        local operation = (path[2] == "sys") and "-s" or ""
+        local path_source = string.format("%s/%s", source_dir, path[1])
+        local path_target = string.gsub(string.format("%s%s", root, path[1]), "[/]+$", "")
 
-		sh("mkdir -p "..sh('dirname '..path_target).out)
-		sh("rm -rf "..path_target)
-		sh("ln "..operation.." "..path_source.." "..path_target)
-	end
+        if sh(string.format('if [ -e "%s" ]; then echo "t"; fi', path_source)).out == "t" then
+            local target_dir = sh(string.format("dirname %s", path_target)).out
+            sh(string.format("mkdir -p %s", target_dir))
+            sh(string.format("rm -rf %s", path_target))
 
-	log('\n>>\n>> create_links END\n>>\n')
+            if operation ~= "" then
+                sh(string.format("ln %s %s %s", operation, path_source, path_target))
+            else
+                sh(string.format("ln %s %s", path_source, path_target))
+            end
+        else
+            log(string.format("Source path '%s' does not exist, skipping link creation.", path_source))
+        end
+    end
 
+    log('\n>>\n>> create_links END\n>>\n')
 end
 
+---Restores files by directly copying them from the specified backup folder.
+---@param links BackupEntry[] List of file definitions to restore
+---@param root string Target directory where configurations are restored
+---@param source_dir string Folder containing the backup files
+local function restore_backup(links, root, source_dir)
+    log('\n>>\n>> restore_backup START\n>>\n')
 
--- TODO: review this function
--- this needs to remove all system and hardlinks
-local function remove_links(links)
-	local operation = ""
-	for i, file in ipairs(links) do
-		sh("rm -r "..full_path.." >/dev/null 2>&1")
-	end
-	print('\n### Finished! ###\n')
+    for _, path in ipairs(links) do
+        local path_source = string.format("%s/%s", source_dir, path[1])
+        local path_target = string.gsub(string.format("%s%s", root, path[1]), "[/]+$", "")
+
+        if sh(string.format('if [ -e "%s" ]; then echo "t"; fi', path_source)).out == "t" then
+            local target_dir = sh(string.format("dirname %s", path_target)).out
+            sh(string.format("mkdir -p %s", target_dir))
+            sh(string.format("rm -rf %s", path_target))
+            sh(string.format("cp -r %s %s", path_source, path_target))
+            log(string.format("Restored: %s -> %s", path_source, path_target))
+        else
+            log(string.format("Backup file '%s' not found, skipping restore.", path_source))
+        end
+    end
+
+    log('\n>>\n>> restore_backup END\n>>\n')
 end
 
+---Removes all target files and links from the root directory.
+---@param links BackupEntry[]
+---@param root string
+local function remove_links(links, root)
+    root = root or root_path
+    for _, file in ipairs(links) do
+        local path_target = string.gsub(string.format("%s%s", root, file[1]), "[/]+$", "")
+        sh(string.format("rm -rf %s", path_target), true)
+    end
 
-actions = {
-	backup = function()
-		sh_q_enable_logs()
-		generate_backup	(backup_paths, root_path)
-	end,
-	create = function()
-		sh_q_enable_logs()
-		link_bakcups (backup_paths, root_path)
-	end,
-	remove = function()
-		sh_q_enable_logs()
-		remove_links(backup_paths)
-	end
+    log('\n>>\n>> remove_links END\n>>\n')
+end
+
+---@type table<string, fun()>
+local actions = {
+    backup = function()
+        sh_q_enable_logs()
+        generate_backup(backup_paths, root_path)
+    end,
+    link = function()
+        sh_q_enable_logs()
+        local source_dir = require_source_dir(arg[2])
+        verify_backup_paths(backup_paths, source_dir)
+        create_links(backup_paths, root_path, source_dir)
+    end,
+    restore = function()
+        sh_q_enable_logs()
+        local source_dir = require_source_dir(arg[2])
+        verify_backup_paths(backup_paths, source_dir)
+        restore_backup(backup_paths, root_path, source_dir)
+    end,
+    remove = function()
+        sh_q_enable_logs()
+        remove_links(backup_paths, root_path)
+    end,
 }
 
-if actions[arg[1]] ~= null then
-	actions[arg[1]]()
-	print('\n### Finished! ###\n')
-	os.exit()
+if arg[1] and actions[arg[1]] ~= nil then
+    actions[arg[1]]()
+    print('================')
+    print('|   Finished   |')
+    print('================')
+    os.exit(0)
 end
 
 print('\n'..[[
 All available arguments:
 
-backup    -> Creates a backup of existing files
-create    -> Removes files at home path and replace
-          them with links to files/folders in this folder
-remove    -> Remove all files (including links) at root path
+backup            -> Creates an isolated backup of current files in root path
+link   <dir>      -> Links files from <dir> into root path (requires directory)
+restore <dir>     -> Copies files back from <dir> into root path (requires directory)
+remove            -> Removes all files/links declared at target root paths
 ]])
-
-
