@@ -60,6 +60,13 @@ function pwc() {
 	return 0
 }
 
+fpath() {
+  local cmd=$(compgen -c | fzf --reverse)
+  eval $cmd
+}
+
+
+
 # set VI MODE
 set -o vi
 
@@ -72,6 +79,11 @@ export PS1='\n\e[01;31m[\u@\H \e[01;37m\t\e[01;31m]\n\e[01;37m\w\e[m$(check_git)
 # editor definitions
 export VISUAL=nvim
 export EDITOR=nvim
+
+
+quiet() { "$@" &> /dev/null & disown; }
+# can also use `nohup <command>` to detatch from the parent shell and redirect
+# all outputs to nohup.out
 
 bind '"\C-l":"clear\n"'
 
@@ -97,10 +109,10 @@ alias sudo~="sudo -E -s"
 
 # requires fd and fzf to work
 ## Fuzzy finds a directory and cd into it
-alias fdir='cd "$(fd --type d --hidden --exclude .git --exclude node_module --exclude .cache --exclude .npm --exclude .mozilla --exclude .meteor --exclude .nv | fzf)"'
+alias fdir='cd "$(fd --type d --hidden --exclude .git --exclude node_module --exclude .cache --exclude .npm --exclude .mozilla --exclude .meteor --exclude .nv --exclude .local/share/Trash | fzf)"'
 
 ## Fuzzy finds a file and cd into its directory
-alias ffile='cd "$(fd --hidden --exclude .git --exclude node_module --exclude .cache --exclude .npm --exclude .mozilla --exclude .meteor --exclude .nv | fzf | grep -Po "([^/]+[/])+")"'
+alias ffile='cd "$(fd --hidden --exclude .git --exclude node_module --exclude .cache --exclude .npm --exclude .mozilla --exclude .meteor --exclude .nv --exclude .local/share/Trash | fzf | grep -Po "([^/]+[/])+")"'
 
 # home fdir and ffile 
 alias hfdir='cd ~/;fdir'
