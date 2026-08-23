@@ -2,9 +2,11 @@
 
 -- This is a system/hard link farming script
 -- Declare folders/files to be linked at the root path
---
+
 package.path = package.path .. ";./?.lua"
+local Format = string.format
 require('sh')
+
 
 ---@alias LinkType "hard" | "sys"
 ---@alias BackupEntry { [1]: string, [2]: LinkType }
@@ -24,8 +26,8 @@ local backup_paths = {
     {".config/alacritty/",              "sys"},
     {".local/share/fonts/",             "sys"},
     {".local/share/nvim/site/spell",    "sys"},
+    {".config/autostart/",    			"sys"},
     --{".local/share/nvim/",    "sys"},
-    --{".config/autostart/",    "sys"},
 }
 
 ---@class FinalLog
@@ -52,15 +54,15 @@ local function require_source_dir(dir_arg)
     end
 
     local expanded_path = string.gsub(dir_arg, "^~", os.getenv("HOME") or "~")
-    local dir_exists = sh(string.format('if [ -d "%s" ]; then echo "t"; fi', expanded_path)).out == "t"
+    local dir_exists = sh(Format('if [ -d "%s" ]; then echo "t"; fi', expanded_path)).out == "t"
 
     if not dir_exists then
-        io.stderr:write(string.format("Error: Specified folder '%s' does not exist or is not a directory.\n", dir_arg))
+        io.stderr:write(Format("Error: Specified folder '%s' does not exist or is not a directory.\n", dir_arg))
         os.exit(1)
     end
 
     -- Get absolute path to prevent symlinks from breaking when using relative directories
-    local absolute_path = sh(string.format('cd "%s" && pwd', expanded_path)).out
+    local absolute_path = sh(Format('cd "%s" && pwd', expanded_path)).out
 
     return string.gsub(absolute_path, "[/]+$", "")
 end
@@ -73,8 +75,8 @@ local function verify_backup_paths(paths, source_dir)
     local missing_paths = {}
 
     for _, entry in ipairs(paths) do
-        local full_path = string.format("%s/%s", source_dir, entry[1])
-        local exists = sh(string.format('if [ -e "%s" ]; then echo "t"; fi', full_path)).out == "t"
+        local full_path = Format("%s/%s", source_dir, entry[1])
+        local exists = sh(Format('if [ -e "%s" ]; then echo "t"; fi', full_path)).out == "t"
 
         if not exists then
             table.insert(missing_paths, entry[1])
@@ -84,7 +86,7 @@ local function verify_backup_paths(paths, source_dir)
     if #missing_paths > 0 then
         print("\n[!] Warning: The following declared paths were not found in the specified directory:")
         for _, missing in ipairs(missing_paths) do
-            print(string.format("  - %s", missing))
+            print(Format("  - %s", missing))
         end
 
         local choice = sh_input("\nDo you want to proceed anyway? (y/n)", {'^[ynYN]$'})
@@ -111,8 +113,8 @@ local function generate_backup(paths, base_path)
     ---@return string
     local function define_dir_name(name, index)
         index = index or 0
-        local new_name = string.format("%s-%d", name, index)
-        if sh(string.format('ls | grep -Po "^%s$"', new_name)).status ~= 0 then
+        local new_name = Format("%s-%d", name, index)
+        if sh(Format('ls | grep -Po "^%s$"', new_name)).status ~= 0 then
             return new_name
         end
 
@@ -131,27 +133,27 @@ local function generate_backup(paths, base_path)
         end
         backup_dir_name = custom_name:match("^%s*(.-)%s*$")
     else
-        local backup_dir_prefix = string.format("backup.%s", sh('echo "$HOSTNAME@$USER"').out)
+        local backup_dir_prefix = Format("backup.%s", sh('echo "$HOSTNAME@$USER"').out)
         backup_dir_name = define_dir_name(backup_dir_prefix)
     end
 
-    sh(string.format("mkdir -p %s", backup_dir_name))
+    sh(Format("mkdir -p %s", backup_dir_name))
 
     for _, path in ipairs(paths) do
-        local path_source_full = string.format("%s%s", base_path, path[1])
+        local path_source_full = Format("%s%s", base_path, path[1])
 
-        sh(string.format("mkdir -p $(dirname %s/%s)", backup_dir_name, path[1]))
-        local check_syslink = sh(string.format('if [ -L "$(echo %s)%s" ]; then echo "t"; fi', base_path, path[1])).out
+        sh(Format("mkdir -p $(dirname %s/%s)", backup_dir_name, path[1]))
+        local check_syslink = sh(Format('if [ -L "$(echo %s)%s" ]; then echo "t"; fi', base_path, path[1])).out
 
-        log(string.format("check_syslink value: [%s]  type:[%s]", check_syslink, type(check_syslink)))
+        log(Format("check_syslink value: [%s]  type:[%s]", check_syslink, type(check_syslink)))
 
         local not_a_system_link = (check_syslink ~= "t")
         if not_a_system_link then
-            sh(string.format("cp -r %s %s/%s", path_source_full, backup_dir_name, path[1]))
+            sh(Format("cp -r %s %s/%s", path_source_full, backup_dir_name, path[1]))
         else
             log('>> target path is a system link\n>> link path will be followed and copied')
-            local syslink_path = sh(string.format("readlink %s", path_source_full)).out
-            sh(string.format("cp -r %s %s/%s", syslink_path, backup_dir_name, path[1]))
+            local syslink_path = sh(Format("readlink %s", path_source_full)).out
+            sh(Format("cp -r %s %s/%s", syslink_path, backup_dir_name, path[1]))
         end
     end
 
@@ -175,21 +177,21 @@ local function create_links(links, root, source_dir)
 
     for _, path in ipairs(links) do
         local operation = (path[2] == "sys") and "-s" or ""
-        local path_source = string.format("%s/%s", source_dir, path[1])
-        local path_target = string.gsub(string.format("%s%s", root, path[1]), "[/]+$", "")
+        local path_source = Format("%s/%s", source_dir, path[1])
+        local path_target = string.gsub(Format("%s%s", root, path[1]), "[/]+$", "")
 
-        if sh(string.format('if [ -e "%s" ]; then echo "t"; fi', path_source)).out == "t" then
-            local target_dir = sh(string.format("dirname %s", path_target)).out
-            sh(string.format("mkdir -p %s", target_dir))
-            sh(string.format("rm -rf %s", path_target))
+        if sh(Format('if [ -e "%s" ]; then echo "t"; fi', path_source)).out == "t" then
+            local target_dir = sh(Format("dirname %s", path_target)).out
+            sh(Format("mkdir -p %s", target_dir))
+            sh(Format("rm -rf %s", path_target))
 
             if operation ~= "" then
-                sh(string.format("ln %s %s %s", operation, path_source, path_target))
+                sh(Format("ln %s %s %s", operation, path_source, path_target))
             else
-                sh(string.format("ln %s %s", path_source, path_target))
+                sh(Format("ln %s %s", path_source, path_target))
             end
         else
-            log(string.format("Source path '%s' does not exist, skipping link creation.", path_source))
+            log(Format("Source path '%s' does not exist, skipping link creation.", path_source))
         end
     end
 
@@ -204,17 +206,17 @@ local function restore_backup(links, root, source_dir)
     log('\n>>\n>> restore_backup START\n>>\n')
 
     for _, path in ipairs(links) do
-        local path_source = string.format("%s/%s", source_dir, path[1])
-        local path_target = string.gsub(string.format("%s%s", root, path[1]), "[/]+$", "")
+        local path_source = Format("%s/%s", source_dir, path[1])
+        local path_target = string.gsub(Format("%s%s", root, path[1]), "[/]+$", "")
 
-        if sh(string.format('if [ -e "%s" ]; then echo "t"; fi', path_source)).out == "t" then
-            local target_dir = sh(string.format("dirname %s", path_target)).out
-            sh(string.format("mkdir -p %s", target_dir))
-            sh(string.format("rm -rf %s", path_target))
-            sh(string.format("cp -r %s %s", path_source, path_target))
-            log(string.format("Restored: %s -> %s", path_source, path_target))
+        if sh(Format('if [ -e "%s" ]; then echo "t"; fi', path_source)).out == "t" then
+            local target_dir = sh(Format("dirname %s", path_target)).out
+            sh(Format("mkdir -p %s", target_dir))
+            sh(Format("rm -rf %s", path_target))
+            sh(Format("cp -r %s %s", path_source, path_target))
+            log(Format("Restored: %s -> %s", path_source, path_target))
         else
-            log(string.format("Backup file '%s' not found, skipping restore.", path_source))
+            log(Format("Backup file '%s' not found, skipping restore.", path_source))
         end
     end
 
@@ -227,8 +229,8 @@ end
 local function remove_links(links, root)
     root = root or root_path
     for _, file in ipairs(links) do
-        local path_target = string.gsub(string.format("%s%s", root, file[1]), "[/]+$", "")
-        sh(string.format("rm -rf %s", path_target), true)
+        local path_target = string.gsub(Format("%s%s", root, file[1]), "[/]+$", "")
+        sh(Format("rm -rf %s", path_target), true)
     end
 
     log('\n>>\n>> remove_links END\n>>\n')

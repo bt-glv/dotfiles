@@ -27,9 +27,29 @@ function sh(command,suppress)
 end
 
 
+function sh_format(command, ...)
+
+	local full_command = string.format(command, ...)
+	log("sh full_command", full_command)
+
+	local io_obj = io.popen(full_command)
+	if io_obj == nil then error("io.popen is returning nil") end
+
+	local output = io_obj:read('*a')
+	output       = string.gsub(output,"\n$",'')
+	local _,_,op_status = io_obj:close()
+
+	return  {out = output, status = op_status}
+end
+function sh_format_supress(command, ...)
+	command = command.." >/dev/null 2>&1"
+	sh_format(command, ...)
+end
+
 ---@param path string
 ---@return boolean
 function sh_syslink_check(path)
+
 		local check_syslink = sh('if [ -L "'..path..'" ]; then echo "t";  fi').out
 		log("check_syslink value: ["..check_syslink..']  type:['..type(check_syslink)..']')
 		return (check_syslink ~= "t")
@@ -83,17 +103,5 @@ function arg_run()
 		print('"'..key..'" -> '..key_data[2]..'\n')
 	end
 end
-
-
--- function shx(command)
-	-- local command_obj = io.popen(command)
-	-- if command_obj == nil then error("io.popen is returning nil") end
-
-	-- local output = command_obj:read('*a')
-	-- output = string.gsub(output,"\n$",'')
-	-- local _,_,op_status = command_obj:close()
-
-	-- return  {out = output, status = op_status}
--- end
 
 
